@@ -1,43 +1,64 @@
-import os
-import time
+#import os
+#import time
 import logging
-import telegram
-import wget
-from telegram.error import NetworkError, Unauthorized
-from time import sleep
+#import telegram
+#import wget
+#from telegram.error import NetworkError, Unauthorized
+from telegram import Update
+from telegram.ext import CallbackContext
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+#from time import sleep
 
-TOKEN = None
-update_id = None
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
 
+logger = logging.getLogger(__name__)
 
-def start():
-    global update_id
+def start(update: Update, context: CallbackContext):
+    keyboard = [
+        [
+            InlineKeyboardButton("Option 1", callback_data='1'),
+            InlineKeyboardButton("Option 2", callback_data='2'),
+        ],
+        [InlineKeyboardButton("Option 3", callback_data='3')],
+    ]   
 
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    update.message.reply_text('Please choose:', reply_markup=reply_markup)
+
+    # update.message.reply_text(
+    #     '_start_comm_text'
+    # )
+
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text(
+            '_help_comm_text'
+        )
+
+def message_handler(update: Update, context: CallbackContext):
+     update.message.reply_text(
+         update.message.text
+         )
+
+     print(f'privet merku na servere, msg text: {update.message.text}')
+
+def very_start():
     with open('TOKEN', 'r') as f:
         TOKEN = f.read()
-        bot = telegram.Bot(TOKEN)
+    updater = Updater(TOKEN)
+    dispatcher = updater.dispatcher
 
-        try:
-            update_id = bot.get_updates()[0].update_id
-        except IndexError:
-            update_id = None
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", help_command))
 
-        logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, message_handler))
 
-        while True:
-            try:
-                process(bot)
-            except NetworkError:
-                sleep(1)
-            except Unauthorized:
-                update_id += 1
+    updater.start_polling()
 
+    updater.idle()
 
-def process(bot):
-    global update_id
-
-    for update in bot.get_updates(offset=update_id, timeout=10):
-        update_id = update.update_id + 1
-
-        if update.message:
-            print(update.message.text)
+        
+   
