@@ -1,5 +1,7 @@
+import bot_handler
+
 def main():
-    return 0
+    bot_handler.start()
 
 if __name__ == "__main__":
     main()
