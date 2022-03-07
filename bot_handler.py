@@ -4,11 +4,10 @@ import logging
 #import telegram
 #import wget
 #from telegram.error import NetworkError, Unauthorized
-from telegram import Update
-from telegram.ext import CallbackContext
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 #from time import sleep
+
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
@@ -16,22 +15,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def start(update: Update, context: CallbackContext):
-    keyboard = [
+def start_command(update: Update, context: CallbackContext):
+    buttons = [
         [
-            InlineKeyboardButton("Option 1", callback_data='1'),
-            InlineKeyboardButton("Option 2", callback_data='2'),
-        ],
-        [InlineKeyboardButton("Option 3", callback_data='3')],
-    ]   
+            KeyboardButton('Створити замовлення'),
+            KeyboardButton('Кнопка 3')
+        ]
+    ]
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    update.message.reply_text('Please choose:', reply_markup=reply_markup)
-
-    # update.message.reply_text(
-    #     '_start_comm_text'
-    # )
+    reply_markup=ReplyKeyboardMarkup(buttons)
+    
+    update.message.reply_text('_start_msg_text', reply_markup=reply_markup)
 
 def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(
@@ -48,10 +42,11 @@ def message_handler(update: Update, context: CallbackContext):
 def very_start():
     with open('TOKEN', 'r') as f:
         TOKEN = f.read()
+
     updater = Updater(TOKEN)
     dispatcher = updater.dispatcher
 
-    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("start", start_command))
     dispatcher.add_handler(CommandHandler("help", help_command))
 
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, message_handler))
