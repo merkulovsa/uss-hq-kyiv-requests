@@ -1,9 +1,7 @@
-from bot_handler import very_start
-
+import bot_handler
 
 def main():
-    very_start()
-
+    bot_handler.start()
 
 if __name__ == "__main__":
     main()
