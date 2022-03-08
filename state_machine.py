@@ -13,17 +13,15 @@ class State():
 
     def enter(self):
         self._next_state = ''
-        print(self.name, 'ENTER')
 
     def exit(self):
-        print(self.name, 'EXIT')
+        pass
 
 class StateMachine():
     def __init__(self) -> None:
         self.current_state_name = ''
         self.previous_state_name = ''
         self._states = {}
-        return
 
     def update(self):
         if self.current_state_name not in self._states:
