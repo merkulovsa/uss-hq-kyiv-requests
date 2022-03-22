@@ -1,10 +1,12 @@
 import logging
 import telegram
+import json
 from telegram.error import NetworkError, Unauthorized
 from telegram import KeyboardButton, ReplyKeyboardMarkup
 from time import sleep
 from state_machine import StateMachine, State
-from collections import defaultdict
+from send_to_notion import send_to_notion
+
 
 NEW_LINE = '\n'
 PH = ' в кількості '
@@ -19,15 +21,17 @@ update_id = None
 bot = None
 machines = {}
 chat_ids = {}
-user_datas = {}
 
 class HandlerState(State):
     def get_chat_id(self):
         return chat_ids[self._state_machine]
 
-    def get_user_data(self):
-        return user_datas[self.get_chat_id()]
+    def write_user_data(self, contact, order):
+        _write_user_data(self.get_chat_id(), contact, order)
 
+    def read_user_data(self):
+        return _read_user_data(self.get_chat_id())      
+    
     def on_bot_update(self, update):
         pass
 
@@ -37,14 +41,15 @@ class HandlerState(State):
         buttons = [
             [KeyboardButton(x) for x in button_names]
         ]
-        bot.send_message(chat_id=self.get_chat_id(), text=text, reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+        bot.send_message(chat_id=self.get_chat_id(), text=text, 
+                         reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
 
 
 class StartState(HandlerState):
     name = 'StartState'
 
+    # consider checking message == '/start'
     def on_bot_update(self, update):
-        self.get_user_data()['order'] = defaultdict(list)
         self._next_state = NumberState.name
 
 class NumberState(HandlerState):
@@ -52,12 +57,12 @@ class NumberState(HandlerState):
 
     def enter(self):
         super().enter()
-
         self.send_message('Введіть контактні дані')
 
     def on_bot_update(self, update):
         if update.message.text:
-            self.get_user_data()['number'] = update.message.text
+            user_data = self.read_user_data()
+            self.write_user_data(update.message.text, user_data['order'])
             self._next_state = IdleState.name
 
 class IdleState(HandlerState):
@@ -66,9 +71,9 @@ class IdleState(HandlerState):
     def enter(self):
         super().enter()
 
-        number = self.get_user_data()['number']
+        contact = self.read_user_data()['contact']
 
-        self.send_message(f'Ваші контактні дані: {number}')
+        self.send_message(f'Ваші контактні дані: {contact}')
         self.send_message('Виберіть наступний крок:', REQUEST_BUTTON, NUMBER_BUTTON)
 
     def on_bot_update(self, update):
@@ -84,9 +89,7 @@ class RequestState(HandlerState):
     name = 'RequestState'
 
     def enter(self):
-        super().enter()    
-        
-
+        super().enter()
         self.send_message('Введіть наіменування')
 
     def on_bot_update(self, update):      
@@ -94,8 +97,18 @@ class RequestState(HandlerState):
 
         if update.message.text != COMPLETE_ORDER_BUTTON:                             
             current_item = str(update.message.text)
-            print(f'curr item: {current_item}')          
-            self.get_user_data()['order']['item'].append(current_item)
+            print(f'curr item: {current_item}')    
+
+            user_data = self.read_user_data()
+            try:      
+                user_data['order']['item'].append(current_item)
+            except:
+                user_data['order']['item'] = []
+                user_data['order']['item'].append(current_item)
+
+            self.write_user_data(user_data['contact'], user_data['order'])  
+
+            #self.get_user_data()['order']['item'].append(current_item)
             self._next_state = RequestState2.name
          
         elif update.message.text == COMPLETE_ORDER_BUTTON:
@@ -115,32 +128,47 @@ class RequestState2(HandlerState):
 
         current_quantity = str(update.message.text)
         print(f'curr qunat: {current_quantity}')
-        self.get_user_data()['order']['quantity'].append(current_quantity)
+
+        user_data = self.read_user_data()
+
+        try:      
+            user_data['order']['quantity'].append(current_quantity)
+        except:
+            user_data['order']['quantity'] = []
+            user_data['order']['quantity'].append(current_quantity)
+        self.write_user_data(user_data['contact'], user_data['order']) 
+
         self.send_message(f'Ви додали до замовлення:\n{current_item} у кількості {current_quantity}', COMPLETE_ORDER_BUTTON)
         self._next_state = RequestState.name
 
 class CompleteOrderState(HandlerState):
     name = 'CompleteOrderState'
+    user_data = {}
+    order = None
 
     def enter(self):
         super().enter()
-        print(self.get_user_data())
-        order_dict = self.get_user_data()['order']
+        self.user_data = self.read_user_data()
+        order_dict = self.user_data['order']
         print(order_dict)
-        order = list(zip(*order_dict.values()))
-        print(order)
-        self.send_message(f'Ваше замовлення:{NEW_LINE}{NEW_LINE.join(str(item[0] + PH + item[1]) for item in order)}', 
+
+        self.order = list(zip(*order_dict.values()))
+        print(self.order)
+        
+        self.send_message(f'Ваше замовлення:{NEW_LINE}{NEW_LINE.join(str(item[0] + PH + item[1]) for item in self.order)}', 
                             CONFIRM_ORDER_BUTTON, CANCEL_ORDER_BUTTON)
 
     def on_bot_update(self, update):  
         if update.message.text == CONFIRM_ORDER_BUTTON:
             self.send_message('Замовлення підтверджено')
-            #further order processing
-            #...
-            #...
-            #...
-            self.get_user_data()['order'] = defaultdict(list)
+            for item, amount in self.order:
+                send_to_notion('db_id_placeholder', item, amount, self.user_data['contact'])
+            # clearing order after posting
+            self.write_user_data(self.user_data['contact'], {})
+
         elif update.message.text == CANCEL_ORDER_BUTTON:
+            # clearing order after cancelling
+            self.write_user_data(self.user_data['contact'], {})
             self.send_message('Замовлення скасовано')
         
         self._next_state = IdleState.name
@@ -180,7 +208,7 @@ def __process(bot):
 
             if chat_id not in machines:
                 __init_machine(chat_id)
-                user_datas[chat_id] = {}
+                _write_user_data(chat_id, '', {})
 
             machines[chat_id].get_active_state().on_bot_update(update)
             machines[chat_id].update()
@@ -198,3 +226,18 @@ def __init_machine(chat_id):
     
     machines[chat_id] = machine
     chat_ids[machine] = chat_id
+
+def _write_user_data(chat_id, contact, order):
+    user_data = {
+        "contact": contact,
+        "order": order,
+    }
+    with open(str(chat_id), 'w') as f:
+        json.dump(user_data, f, ensure_ascii=False)
+
+def _read_user_data(chat_id):
+    with open(str(chat_id), 'r') as f:
+        user_data = f.read()
+        
+    print(user_data)
+    return json.loads(user_data)
