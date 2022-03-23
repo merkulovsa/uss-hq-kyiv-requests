@@ -9,7 +9,7 @@ from send_to_notion import send_to_notion
 
 
 NEW_LINE = '\n'
-PH = ' в кількості '
+PH = ' у кількості '
 
 REQUEST_BUTTON = 'Створити замовлення'
 NUMBER_BUTTON = 'Змінити контактні дані'
@@ -54,24 +54,27 @@ class StartState(HandlerState):
 
 class NumberState(HandlerState):
     name = 'NumberState'
+    user_data = {}
 
     def enter(self):
         super().enter()
+        self.user_data = self.read_user_data()
         self.send_message('Введіть контактні дані')
 
     def on_bot_update(self, update):
         if update.message.text:
-            user_data = self.read_user_data()
-            self.write_user_data(update.message.text, user_data['order'])
+            contact = str(update.message.text)
+            self.write_user_data(contact, self.user_data['order'])
             self._next_state = IdleState.name
 
 class IdleState(HandlerState):
     name = 'IdleState'
+    user_data = {}
 
     def enter(self):
         super().enter()
-
-        contact = self.read_user_data()['contact']
+        self.user_data = self.read_user_data()
+        contact = self.user_data['contact']
 
         self.send_message(f'Ваші контактні дані: {contact}')
         self.send_message('Виберіть наступний крок:', REQUEST_BUTTON, NUMBER_BUTTON)
@@ -83,32 +86,30 @@ class IdleState(HandlerState):
             self._next_state = NumberState.name
 
 
-current_item = ''
-current_quantity = ''
+
 class RequestState(HandlerState):
     name = 'RequestState'
+    user_data = {}
 
     def enter(self):
         super().enter()
+        self.user_data = self.read_user_data()
         self.send_message('Введіть наіменування')
 
     def on_bot_update(self, update):      
-        global current_item
 
         if update.message.text != COMPLETE_ORDER_BUTTON:                             
             current_item = str(update.message.text)
             print(f'curr item: {current_item}')    
 
-            user_data = self.read_user_data()
             try:      
-                user_data['order']['item'].append(current_item)
+                self.user_data['order']['item'].append(current_item)
             except:
-                user_data['order']['item'] = []
-                user_data['order']['item'].append(current_item)
+                self.user_data['order']['item'] = []
+                self.user_data['order']['item'].append(current_item)
 
-            self.write_user_data(user_data['contact'], user_data['order'])  
+            self.write_user_data(self.user_data['contact'], self.user_data['order'])  
 
-            #self.get_user_data()['order']['item'].append(current_item)
             self._next_state = RequestState2.name
          
         elif update.message.text == COMPLETE_ORDER_BUTTON:
@@ -117,28 +118,27 @@ class RequestState(HandlerState):
 
 class RequestState2(HandlerState):
     name = 'RequestState2'
+    user_data = {}
 
     def enter(self):
         super().enter()
-
+        self.user_data = self.read_user_data()
         self.send_message('Введіть кількість')
 
     def on_bot_update(self, update):
-        global current_quantity
 
         current_quantity = str(update.message.text)
         print(f'curr qunat: {current_quantity}')
 
-        user_data = self.read_user_data()
-
         try:      
-            user_data['order']['quantity'].append(current_quantity)
+            self.user_data['order']['quantity'].append(current_quantity)
         except:
-            user_data['order']['quantity'] = []
-            user_data['order']['quantity'].append(current_quantity)
-        self.write_user_data(user_data['contact'], user_data['order']) 
+            self.user_data['order']['quantity'] = []
+            self.user_data['order']['quantity'].append(current_quantity)
+        self.write_user_data(self.user_data['contact'], self.user_data['order']) 
 
-        self.send_message(f'Ви додали до замовлення:\n{current_item} у кількості {current_quantity}', COMPLETE_ORDER_BUTTON)
+        self.send_message(f'Ви додали до замовлення:\n{self.user_data["order"]["item"][-1]}{PH}{self.user_data["order"]["quantity"][-1]}', 
+                            COMPLETE_ORDER_BUTTON)
         self._next_state = RequestState.name
 
 class CompleteOrderState(HandlerState):
@@ -160,9 +160,9 @@ class CompleteOrderState(HandlerState):
 
     def on_bot_update(self, update):  
         if update.message.text == CONFIRM_ORDER_BUTTON:
-            self.send_message('Замовлення підтверджено')
             for item, amount in self.order:
                 send_to_notion('db_id_placeholder', item, amount, self.user_data['contact'])
+            self.send_message('Замовлення надіслано до бази')
             # clearing order after posting
             self.write_user_data(self.user_data['contact'], {})
 
